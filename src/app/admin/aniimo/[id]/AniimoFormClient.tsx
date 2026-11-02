@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Save, ArrowLeft, Upload, Image as ImageIcon } from 'lucide-react';
+import { Save, ArrowLeft, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 interface Props {
   id: string;
@@ -21,6 +21,7 @@ export default function AniimoFormClient({ id }: Props) {
   const [imageUrl, setImageUrl] = useState('');
   const [status, setStatus] = useState('draft');
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -66,7 +67,6 @@ export default function AniimoFormClient({ id }: Props) {
       return;
     }
 
-    // Get public access URL
     const { data: publicUrlData } = supabase.storage
       .from('aniimo-images')
       .getPublicUrl(filePath);
@@ -109,14 +109,49 @@ export default function AniimoFormClient({ id }: Props) {
     }
   };
 
+  // Delete Record Function
+  const handleDelete = async () => {
+    if (isNew) return;
+    const confirmed = window.confirm(`Are you sure you want to permanently delete "${name || 'this character'}"?`);
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error } = await supabase.from('aniimo').delete().eq('id', id);
+
+    setDeleting(false);
+    if (error) {
+      setMessage(`Error deleting record: ${error.message}`);
+    } else {
+      router.push('/admin/aniimo');
+      router.refresh();
+    }
+  };
+
   return (
     <div className="max-w-3xl space-y-6">
-      <button
-        onClick={() => router.back()}
-        className="text-xs text-slate-400 hover:text-slate-100 flex items-center gap-1.5 transition"
-      >
-        <ArrowLeft className="w-3.5 h-3.5" /> Back to List
-      </button>
+      <div className="flex justify-between items-center">
+        <button
+          onClick={() => router.back()}
+          className="text-xs text-slate-400 hover:text-slate-100 flex items-center gap-1.5 transition"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to List
+        </button>
+
+        {!isNew && (
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-semibold text-xs transition flex items-center gap-1.5 disabled:opacity-50"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            {deleting ? 'Deleting...' : 'Delete Record'}
+          </button>
+        )}
+      </div>
 
       <div>
         <h1 className="text-2xl font-bold text-slate-100">{isNew ? 'Create New Aniimo' : 'Edit Aniimo'}</h1>
@@ -130,7 +165,6 @@ export default function AniimoFormClient({ id }: Props) {
       )}
 
       <form onSubmit={handleSubmit} className="p-6 rounded-xl bg-slate-900 border border-slate-800 space-y-5">
-        {/* Image Preview & Upload Section */}
         <div className="space-y-2">
           <label className="text-xs font-semibold text-slate-300">Character Image Asset</label>
           <div className="flex items-center gap-4">
@@ -246,7 +280,7 @@ export default function AniimoFormClient({ id }: Props) {
 
         <button
           type="submit"
-          disabled={loading || uploading}
+          disabled={loading || uploading || deleting}
           className="px-5 py-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm transition flex items-center gap-2 disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
