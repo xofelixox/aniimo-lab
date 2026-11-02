@@ -3,11 +3,25 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Save, ArrowLeft, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Save, ArrowLeft, Upload, Image as ImageIcon, Trash2, Check } from 'lucide-react';
 
 interface Props {
   id: string;
 }
+
+const ELEMENT_OPTIONS = [
+  'Fire',
+  'Water',
+  'Grass',
+  'Lightning',
+  'Ice',
+  'Wind',
+  'Rock',
+  'Light',
+  'Dark',
+];
+
+const ROLE_OPTIONS = ['DPS', 'BREAK', 'HEAL', 'REGEN', 'SUPPORT'];
 
 export default function AniimoFormClient({ id }: Props) {
   const isNew = id === 'new';
@@ -15,8 +29,8 @@ export default function AniimoFormClient({ id }: Props) {
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [element, setElement] = useState('');
-  const [roles, setRoles] = useState('');
+  const [selectedElements, setSelectedElements] = useState<string[]>(['Fire']);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [status, setStatus] = useState('draft');
@@ -33,8 +47,13 @@ export default function AniimoFormClient({ id }: Props) {
         if (data) {
           setName(data.name);
           setSlug(data.slug);
-          setElement(data.element);
-          setRoles(data.roles.join(', '));
+          // Handle both legacy string element or array if stored
+          if (Array.isArray(data.element)) {
+            setSelectedElements(data.element);
+          } else if (typeof data.element === 'string') {
+            setSelectedElements([data.element]);
+          }
+          setSelectedRoles(data.roles || []);
           setDescription(data.description || '');
           setImageUrl(data.image_url || '');
           setStatus(data.status);
@@ -44,7 +63,24 @@ export default function AniimoFormClient({ id }: Props) {
     }
   }, [id, isNew]);
 
-  // Handle direct file upload to Supabase Storage
+  const toggleElement = (el: string) => {
+    if (selectedElements.includes(el)) {
+      if (selectedElements.length > 1) {
+        setSelectedElements(selectedElements.filter((e) => e !== el));
+      }
+    } else {
+      setSelectedElements([...selectedElements, el]);
+    }
+  };
+
+  const toggleRole = (role: string) => {
+    if (selectedRoles.includes(role)) {
+      setSelectedRoles(selectedRoles.filter((r) => r !== role));
+    } else {
+      setSelectedRoles([...selectedRoles, role]);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -77,6 +113,15 @@ export default function AniimoFormClient({ id }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (selectedElements.length === 0) {
+      setMessage('Please select at least one element.');
+      return;
+    }
+    if (selectedRoles.length === 0) {
+      setMessage('Please select at least one role for this Aniimo.');
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
 
@@ -84,8 +129,9 @@ export default function AniimoFormClient({ id }: Props) {
     const payload = {
       name,
       slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
-      element,
-      roles: roles.split(',').map((r) => r.trim()).filter(Boolean),
+      // Store primary element for backward compatibility, or full array if column allows
+      element: selectedElements.join(', '), 
+      roles: selectedRoles,
       description,
       image_url: imageUrl,
       status,
@@ -109,7 +155,6 @@ export default function AniimoFormClient({ id }: Props) {
     }
   };
 
-  // Delete Record Function
   const handleDelete = async () => {
     if (isNew) return;
     const confirmed = window.confirm(`Are you sure you want to permanently delete "${name || 'this character'}"?`);
@@ -155,7 +200,7 @@ export default function AniimoFormClient({ id }: Props) {
 
       <div>
         <h1 className="text-2xl font-bold text-slate-100">{isNew ? 'Create New Aniimo' : 'Edit Aniimo'}</h1>
-        <p className="text-slate-400 text-xs">Configure character attributes, element, roles, image asset, and status.</p>
+        <p className="text-slate-400 text-xs">Configure character attributes, elemental affinities, roles, image asset, and status.</p>
       </div>
 
       {message && (
@@ -165,6 +210,7 @@ export default function AniimoFormClient({ id }: Props) {
       )}
 
       <form onSubmit={handleSubmit} className="p-6 rounded-xl bg-slate-900 border border-slate-800 space-y-5">
+        {/* Image Preview & Upload Section */}
         <div className="space-y-2">
           <label className="text-xs font-semibold text-slate-300">Character Image Asset</label>
           <div className="flex items-center gap-4">
@@ -229,29 +275,68 @@ export default function AniimoFormClient({ id }: Props) {
           </div>
         </div>
 
+        {/* Elements Multi-select Badges */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-slate-300">Elements (Select one or more for dual-element Aniimo)</label>
+          <div className="flex flex-wrap gap-2">
+            {ELEMENT_OPTIONS.map((el) => {
+              const isSelected = selectedElements.includes(el);
+              return (
+                <button
+                  type="button"
+                  key={el}
+                  onClick={() => toggleElement(el)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                    isSelected
+                      ? 'bg-teal-500 text-slate-950 border border-teal-400 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  {isSelected && <Check className="w-3.5 h-3.5" />}
+                  {el}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Roles Multi-select Badges */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-slate-300">Roles (Select one or more)</label>
+          <div className="flex flex-wrap gap-2">
+            {ROLE_OPTIONS.map((role) => {
+              const isSelected = selectedRoles.includes(role);
+              return (
+                <button
+                  type="button"
+                  key={role}
+                  onClick={() => toggleRole(role)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                    isSelected
+                      ? 'bg-teal-500 text-slate-950 border border-teal-400 shadow-sm'
+                      : 'bg-slate-950 text-slate-400 border border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  {isSelected && <Check className="w-3.5 h-3.5" />}
+                  {role}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-300">Element</label>
-            <input
-              type="text"
-              required
-              value={element}
-              onChange={(e) => setElement(e.target.value)}
-              placeholder="e.g. Pyro, Hydro, Anemo"
+            <label className="text-xs font-semibold text-slate-300">Publication Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-teal-400"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-300">Roles (Comma Separated)</label>
-            <input
-              type="text"
-              required
-              value={roles}
-              onChange={(e) => setRoles(e.target.value)}
-              placeholder="e.g. Main DPS, Shield, Buffer"
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-teal-400"
-            />
+            >
+              <option value="draft">Draft (Private)</option>
+              <option value="published">Published (Public)</option>
+              <option value="archived">Archived</option>
+            </select>
           </div>
         </div>
 
@@ -263,19 +348,6 @@ export default function AniimoFormClient({ id }: Props) {
             onChange={(e) => setDescription(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-teal-400"
           />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-xs font-semibold text-slate-300">Publication Status</label>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-teal-400"
-          >
-            <option value="draft">Draft (Private)</option>
-            <option value="published">Published (Public)</option>
-            <option value="archived">Archived</option>
-          </select>
         </div>
 
         <button
