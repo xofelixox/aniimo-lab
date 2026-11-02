@@ -3,10 +3,17 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Save, ArrowLeft, Trash2 } from 'lucide-react';
+import { Save, ArrowLeft, Trash2, Check, Users } from 'lucide-react';
 
 interface Props {
   id: string;
+}
+
+interface AniimoOption {
+  id: string;
+  name: string;
+  element: string;
+  image_url?: string;
 }
 
 export default function TeamFormClient({ id }: Props) {
@@ -20,28 +27,54 @@ export default function TeamFormClient({ id }: Props) {
   const [difficulty, setDifficulty] = useState('intermediate');
   const [guideContent, setGuideContent] = useState('');
   const [status, setStatus] = useState('draft');
+  const [selectedAniimoIds, setSelectedAniimoIds] = useState<string[]>([]);
+  const [availableAniimo, setAvailableAniimo] = useState<AniimoOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isNew) {
-      const loadTeam = async () => {
-        const supabase = createClient();
-        const { data } = await supabase.from('teams').select('*').eq('id', id).single();
-        if (data) {
-          setTitle(data.title);
-          setSlug(data.slug);
-          setDescription(data.description || '');
-          setGameMode(data.game_mode || 'PvE Meta');
-          setDifficulty(data.difficulty || 'intermediate');
-          setGuideContent(data.guide_content || '');
-          setStatus(data.status);
+    const loadData = async () => {
+      const supabase = createClient();
+      
+      // Load all available published characters for selecting
+      const { data: aniimoData } = await supabase
+        .from('aniimo')
+        .select('id, name, element, image_url')
+        .order('name');
+      
+      if (aniimoData) setAvailableAniimo(aniimoData);
+
+      // Load team data if editing
+      if (!isNew) {
+        const { data: teamData } = await supabase.from('teams').select('*').eq('id', id).single();
+        if (teamData) {
+          setTitle(teamData.title);
+          setSlug(teamData.slug);
+          setDescription(teamData.description || '');
+          setGameMode(teamData.game_mode || 'PvE Meta');
+          setDifficulty(teamData.difficulty || 'intermediate');
+          setGuideContent(teamData.guide_content || '');
+          setStatus(teamData.status);
+          setSelectedAniimoIds(teamData.aniimo_ids || []);
         }
-      };
-      loadTeam();
-    }
+      }
+    };
+    loadData();
   }, [id, isNew]);
+
+  const toggleAniimo = (aniimoId: string) => {
+    if (selectedAniimoIds.includes(aniimoId)) {
+      setSelectedAniimoIds(selectedAniimoIds.filter((i) => i !== aniimoId));
+    } else {
+      if (selectedAniimoIds.length >= 4) {
+        setMessage('A team composition can have a maximum of 4 Aniimo members.');
+        return;
+      }
+      setMessage(null);
+      setSelectedAniimoIds([...selectedAniimoIds, aniimoId]);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +89,7 @@ export default function TeamFormClient({ id }: Props) {
       game_mode: gameMode,
       difficulty,
       guide_content: guideContent,
+      aniimo_ids: selectedAniimoIds,
       status,
     };
 
@@ -120,7 +154,7 @@ export default function TeamFormClient({ id }: Props) {
 
       <div>
         <h1 className="text-2xl font-bold text-slate-100">{isNew ? 'Create Team Build' : 'Edit Team Build'}</h1>
-        <p className="text-slate-400 text-xs">Configure composition title, game mode, rotation guide, and status.</p>
+        <p className="text-slate-400 text-xs">Configure composition title, game mode, squad members, rotation guide, and status.</p>
       </div>
 
       {message && (
@@ -154,6 +188,49 @@ export default function TeamFormClient({ id }: Props) {
               onChange={(e) => setSlug(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-teal-400"
             />
+          </div>
+        </div>
+
+        {/* Squad Members Selection */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-slate-300 flex items-center gap-2">
+            <Users className="w-4 h-4 text-teal-400" /> Select Squad Members ({selectedAniimoIds.length}/4)
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {availableAniimo && availableAniimo.length > 0 ? (
+              availableAniimo.map((char) => {
+                const isSelected = selectedAniimoIds.includes(char.id);
+                return (
+                  <button
+                    type="button"
+                    key={char.id}
+                    onClick={() => toggleAniimo(char.id)}
+                    className={`p-3 rounded-xl border text-left transition flex items-center gap-2.5 ${
+                      isSelected
+                        ? 'bg-teal-500/10 border-teal-400 text-slate-100'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-800 overflow-hidden flex-shrink-0 border border-slate-700 flex items-center justify-center text-xs">
+                      {char.image_url ? (
+                        <img src={char.image_url} alt={char.name} className="w-full h-full object-cover" />
+                      ) : (
+                        char.name[0]
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold truncate">{char.name}</p>
+                      <p className="text-[10px] text-teal-400">{char.element}</p>
+                    </div>
+                    {isSelected && <Check className="w-4 h-4 text-teal-400 flex-shrink-0" />}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="col-span-4 p-4 text-center text-xs text-slate-500 bg-slate-950 rounded-lg border border-slate-800">
+                No Aniimo found in database. Add character records first!
+              </div>
+            )}
           </div>
         </div>
 
