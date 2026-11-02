@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Save, ArrowLeft } from 'lucide-react';
+import { Save, ArrowLeft, Upload, Image as ImageIcon } from 'lucide-react';
 
 interface Props {
   id: string;
@@ -18,8 +18,10 @@ export default function AniimoFormClient({ id }: Props) {
   const [element, setElement] = useState('');
   const [roles, setRoles] = useState('');
   const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [status, setStatus] = useState('draft');
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,12 +35,45 @@ export default function AniimoFormClient({ id }: Props) {
           setElement(data.element);
           setRoles(data.roles.join(', '));
           setDescription(data.description || '');
+          setImageUrl(data.image_url || '');
           setStatus(data.status);
         }
       };
       loadAniimo();
     }
   }, [id, isNew]);
+
+  // Handle direct file upload to Supabase Storage
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `avatars/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('aniimo-images')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      setMessage(`Image upload failed: ${uploadError.message}`);
+      setUploading(false);
+      return;
+    }
+
+    // Get public access URL
+    const { data: publicUrlData } = supabase.storage
+      .from('aniimo-images')
+      .getPublicUrl(filePath);
+
+    setImageUrl(publicUrlData.publicUrl);
+    setUploading(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +87,7 @@ export default function AniimoFormClient({ id }: Props) {
       element,
       roles: roles.split(',').map((r) => r.trim()).filter(Boolean),
       description,
+      image_url: imageUrl,
       status,
     };
 
@@ -84,7 +120,7 @@ export default function AniimoFormClient({ id }: Props) {
 
       <div>
         <h1 className="text-2xl font-bold text-slate-100">{isNew ? 'Create New Aniimo' : 'Edit Aniimo'}</h1>
-        <p className="text-slate-400 text-xs">Configure character attributes, element, roles, and status.</p>
+        <p className="text-slate-400 text-xs">Configure character attributes, element, roles, image asset, and status.</p>
       </div>
 
       {message && (
@@ -93,7 +129,45 @@ export default function AniimoFormClient({ id }: Props) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="p-6 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
+      <form onSubmit={handleSubmit} className="p-6 rounded-xl bg-slate-900 border border-slate-800 space-y-5">
+        {/* Image Preview & Upload Section */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-slate-300">Character Image Asset</label>
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
+              {imageUrl ? (
+                <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
+              ) : (
+                <ImageIcon className="w-8 h-8 text-slate-600" />
+              )}
+            </div>
+            
+            <div className="flex-1 space-y-2">
+              <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs cursor-pointer transition">
+                <Upload className="w-4 h-4 text-teal-400" />
+                {uploading ? 'Uploading to Supabase...' : 'Upload Image File'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+
+              <p className="text-[11px] text-slate-500">Or enter an image URL directly below:</p>
+              
+              <input
+                type="url"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="https://example.com/character.png"
+                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-xs focus:outline-none focus:border-teal-400"
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-300">Name</label>
@@ -172,8 +246,8 @@ export default function AniimoFormClient({ id }: Props) {
 
         <button
           type="submit"
-          disabled={loading}
-          className="px-5 py-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm transition flex items-center gap-2"
+          disabled={loading || uploading}
+          className="px-5 py-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-sm transition flex items-center gap-2 disabled:opacity-50"
         >
           <Save className="w-4 h-4" />
           {loading ? 'Saving...' : 'Save Aniimo Record'}
